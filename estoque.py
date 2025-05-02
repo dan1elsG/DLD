@@ -5,13 +5,13 @@ import os
 
 # Configuração da página
 st.set_page_config(
-    page_title="Sistema de Controle de Estoque - Roupas Masculinas",
+    page_title="Sistema de Controle de Estoque - DLD",
     page_icon="👔",
     layout="wide"
 )
 
 # Título da aplicação
-st.title("👔 Sistema de Controle de Estoque - Roupas Masculinas")
+st.title("👔 Sistema de Controle de Estoque - DLD")
 
 # Inicialização do estado da sessão
 if 'produtos' not in st.session_state:
@@ -43,11 +43,37 @@ if 'pedidos' not in st.session_state:
         'Status'
     ])
 
+if 'fornecedores' not in st.session_state:
+    st.session_state.fornecedores = pd.DataFrame(columns=[
+        'cnpj',
+        'nome',
+        'telefone',
+        'endereco',
+        'data_cadastro'
+    ])
+
+if 'entradas' not in st.session_state:
+    st.session_state.entradas = pd.DataFrame(columns=[
+        'ID',
+        'Data',
+        'CNPJ_Fornecedor',
+        'Nome_Fornecedor',
+        'Codigo_Produto',
+        'Produto',
+        'Tamanho',
+        'Cor',
+        'Quantidade',
+        'Valor_Unitario',
+        'Valor_Total'
+    ])
+
 
 # Funções para salvar e carregar dados
 def salvar_dados():
     st.session_state.produtos.to_csv('estoque.csv', index=False)
     st.session_state.pedidos.to_csv('pedidos.csv', index=False)
+    st.session_state.fornecedores.to_csv('fornecedores.csv', index=False)
+    st.session_state.entradas.to_csv('entradas.csv', index=False)
 
 
 def carregar_dados():
@@ -63,12 +89,25 @@ def carregar_dados():
         except:
             st.warning("Arquivo de pedidos encontrado, mas com formato diferente. Iniciando com dados vazios.")
 
+    if os.path.exists('fornecedores.csv'):
+        try:
+            st.session_state.fornecedores = pd.read_csv('fornecedores.csv')
+        except:
+            st.warning("Arquivo de fornecedores encontrado, mas com formato diferente. Iniciando com dados vazios.")
+
+    if os.path.exists('entradas.csv'):
+        try:
+            st.session_state.entradas = pd.read_csv('entradas.csv')
+        except:
+            st.warning("Arquivo de entradas encontrado, mas com formato diferente. Iniciando com dados vazios.")
+
 
 # Carregar dados existentes
 carregar_dados()
 
 # Criar as abas
-tab1, tab2, tab3 = st.tabs(["📝 Cadastrar Produtos", "📋 Lista de Produtos", "🛍️ Pedidos"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["📝 Cadastrar Produtos", "📋 Lista de Produtos", "🛍️ Pedidos", "📦 Entradas", "👥 Fornecedores"])
 
 # Aba 1: Cadastrar Produtos
 with tab1:
@@ -297,6 +336,9 @@ with tab3:
     if not st.session_state.pedidos.empty:
         df_filtrado = st.session_state.pedidos.copy()
 
+        # Remover pedidos entregues da visualização
+        df_filtrado = df_filtrado[df_filtrado['Status'] != 'Entregue']
+
         if status_filtro != "Todos":
             df_filtrado = df_filtrado[df_filtrado['Status'] == status_filtro]
 
@@ -332,10 +374,10 @@ with tab3:
         )
 
         # Estatísticas
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            st.metric("Total de Pedidos", len(df_filtrado))
+            st.metric("Total de Pedidos Ativos", len(df_filtrado))
 
         with col2:
             valor_total = df_filtrado['Valor_Total'].sum() if 'Valor_Total' in df_filtrado.columns else 0
@@ -344,13 +386,27 @@ with tab3:
         with col3:
             st.metric("Pedidos Pendentes", len(df_filtrado[df_filtrado['Status'] == 'Pendente']))
 
+        with col4:
+            total_entregues = len(st.session_state.pedidos[st.session_state.pedidos['Status'] == 'Entregue'])
+            st.metric("Total de Pedidos Entregues", total_entregues)
+
         # Atualizar status
         st.subheader("Atualizar Status do Pedido")
         col1, col2 = st.columns(2)
 
+        # Obter lista de IDs disponíveis
+        ids_disponiveis = df_filtrado['ID'].tolist()
+
         with col1:
-            pedido_id = st.number_input("ID do Pedido", min_value=1,
-                                        max_value=len(df_filtrado) if len(df_filtrado) > 0 else 1)
+            if ids_disponiveis:
+                pedidos_selecionados = st.multiselect(
+                    "Selecione os Pedidos",
+                    options=ids_disponiveis,
+                    format_func=lambda x: f"Pedido #{x}"
+                )
+            else:
+                st.info("Não há pedidos disponíveis para atualização")
+                pedidos_selecionados = []
 
         with col2:
             novo_status = st.selectbox(
@@ -360,11 +416,202 @@ with tab3:
             )
 
         if st.button("Atualizar Status", type="primary"):
-            if pedido_id in df_filtrado['ID'].values:
-                st.session_state.pedidos.loc[st.session_state.pedidos['ID'] == pedido_id, 'Status'] = novo_status
-                salvar_dados()
-                st.success("✅ Status atualizado com sucesso!")
+            if pedidos_selecionados:
+                # Verificar se algum dos pedidos selecionados está entregue
+                pedidos_entregues = st.session_state.pedidos[
+                    (st.session_state.pedidos['ID'].isin(pedidos_selecionados)) &
+                    (st.session_state.pedidos['Status'] == 'Entregue')
+                    ]
+
+                if len(pedidos_entregues) > 0:
+                    st.error("❌ Não é possível alterar o status de pedidos já entregues!")
+                else:
+                    # Atualizar status de todos os pedidos selecionados
+                    for pedido_id in pedidos_selecionados:
+                        st.session_state.pedidos.loc[
+                            st.session_state.pedidos['ID'] == pedido_id, 'Status'] = novo_status
+
+                    salvar_dados()
+                    st.success(f"✅ Status atualizado com sucesso para {len(pedidos_selecionados)} pedido(s)!")
             else:
-                st.error("❌ ID do pedido não encontrado!")
+                st.warning("⚠️ Selecione pelo menos um pedido para atualizar!")
     else:
         st.info("Nenhum pedido registrado ainda.")
+
+# Aba 4: Entradas
+with tab4:
+    st.header("Entrada de Produtos")
+
+    # Formulário para nova entrada
+    with st.form("nova_entrada"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Selecionar fornecedor
+            if not st.session_state.fornecedores.empty:
+                fornecedor_selecionado = st.selectbox(
+                    "Fornecedor*",
+                    options=st.session_state.fornecedores['cnpj'].tolist(),
+                    format_func=lambda
+                        x: f"{st.session_state.fornecedores[st.session_state.fornecedores['cnpj'] == x]['nome'].iloc[0]} - {x}"
+                )
+            else:
+                st.warning("Cadastre um fornecedor primeiro!")
+                fornecedor_selecionado = None
+
+            codigo_produto = st.text_input("Código do Produto*")
+
+            # Buscar informações do produto
+            if codigo_produto:
+                produto_info = st.session_state.produtos[st.session_state.produtos['codigo'] == codigo_produto]
+                if not produto_info.empty:
+                    st.info(f"""
+                    **Produto:** {produto_info['produto'].iloc[0]}  
+                    **Tamanho:** {produto_info['tamanho'].iloc[0]}  
+                    **Cor:** {produto_info['cor'].iloc[0]}  
+                    **Preço de Custo Atual:** R$ {produto_info['preco_custo'].iloc[0]:.2f}
+                    """)
+
+        with col2:
+            quantidade = st.number_input("Quantidade*", min_value=1, value=1)
+            valor_unitario = st.number_input("Valor Unitário (R$)*", min_value=0.0, format="%.2f")
+
+        submitted = st.form_submit_button("Registrar Entrada", type="primary")
+
+        if submitted:
+            if fornecedor_selecionado and codigo_produto and quantidade and valor_unitario:
+                # Verificar se o produto existe
+                produto_info = st.session_state.produtos[st.session_state.produtos['codigo'] == codigo_produto]
+                if not produto_info.empty:
+                    valor_total = quantidade * valor_unitario
+                    nome_fornecedor = \
+                    st.session_state.fornecedores[st.session_state.fornecedores['cnpj'] == fornecedor_selecionado][
+                        'nome'].iloc[0]
+
+                    # Criar nova entrada
+                    nova_entrada = pd.DataFrame({
+                        'ID': [len(st.session_state.entradas) + 1],
+                        'Data': [datetime.now().strftime("%d/%m/%Y %H:%M")],
+                        'CNPJ_Fornecedor': [fornecedor_selecionado],
+                        'Nome_Fornecedor': [nome_fornecedor],
+                        'Codigo_Produto': [codigo_produto],
+                        'Produto': [produto_info['produto'].iloc[0]],
+                        'Tamanho': [produto_info['tamanho'].iloc[0]],
+                        'Cor': [produto_info['cor'].iloc[0]],
+                        'Quantidade': [quantidade],
+                        'Valor_Unitario': [valor_unitario],
+                        'Valor_Total': [valor_total]
+                    })
+
+                    # Atualizar estoque
+                    st.session_state.produtos.loc[
+                        st.session_state.produtos['codigo'] == codigo_produto, 'estoque_atual'] += quantidade
+                    st.session_state.produtos.loc[
+                        st.session_state.produtos['codigo'] == codigo_produto, 'preco_custo'] = valor_unitario
+                    st.session_state.produtos.loc[
+                        st.session_state.produtos['codigo'] == codigo_produto, 'ultima_atualizacao'] = datetime.now()
+
+                    # Adicionar entrada
+                    st.session_state.entradas = pd.concat([st.session_state.entradas, nova_entrada], ignore_index=True)
+
+                    # Salvar dados
+                    salvar_dados()
+
+                    st.success("✅ Entrada registrada com sucesso!")
+                else:
+                    st.error("❌ Código do produto não encontrado!")
+            else:
+                st.error("❌ Por favor, preencha todos os campos obrigatórios!")
+
+    # Lista de entradas
+    st.subheader("Histórico de Entradas")
+    if not st.session_state.entradas.empty:
+        st.dataframe(
+            st.session_state.entradas,
+            column_config={
+                "ID": "ID",
+                "Data": "Data",
+                "CNPJ_Fornecedor": "CNPJ",
+                "Nome_Fornecedor": "Fornecedor",
+                "Codigo_Produto": "Código",
+                "Produto": "Produto",
+                "Tamanho": "Tamanho",
+                "Cor": "Cor",
+                "Quantidade": st.column_config.NumberColumn(
+                    "Quantidade",
+                    format="%d"
+                ),
+                "Valor_Unitario": st.column_config.NumberColumn(
+                    "Valor Unitário",
+                    format="R$ %.2f"
+                ),
+                "Valor_Total": st.column_config.NumberColumn(
+                    "Valor Total",
+                    format="R$ %.2f"
+                )
+            },
+            hide_index=True
+        )
+    else:
+        st.info("Nenhuma entrada registrada ainda.")
+
+# Aba 5: Fornecedores
+with tab5:
+    st.header("Cadastro de Fornecedores")
+
+    # Formulário de cadastro
+    with st.form("form_cadastro_fornecedor"):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            cnpj = st.text_input("CNPJ*")
+            nome = st.text_input("Nome do Fornecedor*")
+
+        with col2:
+            telefone = st.text_input("Telefone*")
+            endereco = st.text_input("Endereço*")
+
+        submitted = st.form_submit_button("Cadastrar Fornecedor", type="primary")
+
+        if submitted:
+            if cnpj and nome and telefone and endereco:
+                # Verificar se o CNPJ já existe
+                if cnpj in st.session_state.fornecedores['cnpj'].values:
+                    st.error("❌ CNPJ já cadastrado!")
+                else:
+                    # Criar novo fornecedor
+                    novo_fornecedor = pd.DataFrame({
+                        'cnpj': [cnpj],
+                        'nome': [nome],
+                        'telefone': [telefone],
+                        'endereco': [endereco],
+                        'data_cadastro': [datetime.now()]
+                    })
+
+                    # Adicionar ao DataFrame
+                    st.session_state.fornecedores = pd.concat([st.session_state.fornecedores, novo_fornecedor],
+                                                              ignore_index=True)
+
+                    # Salvar dados
+                    salvar_dados()
+
+                    st.success("✅ Fornecedor cadastrado com sucesso!")
+            else:
+                st.error("❌ Por favor, preencha todos os campos obrigatórios!")
+
+    # Lista de fornecedores
+    st.subheader("Lista de Fornecedores")
+    if not st.session_state.fornecedores.empty:
+        st.dataframe(
+            st.session_state.fornecedores,
+            column_config={
+                "cnpj": "CNPJ",
+                "nome": "Nome",
+                "telefone": "Telefone",
+                "endereco": "Endereço",
+                "data_cadastro": "Data de Cadastro"
+            },
+            hide_index=True
+        )
+    else:
+        st.info("Nenhum fornecedor cadastrado ainda.") 

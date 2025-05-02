@@ -1,3 +1,5 @@
 ID,Cliente,Produto,Tamanho,Quantidade,Valor,Data,Status,Codigo_Produto,Cor,Valor_Unitario,Valor_Total
 1,DANIEL,CAMISA PUMA,M,1,,01/05/2025 15:35,Entregue,CP-001,VERDE,83.0,83.0
 2,douglas,CAMISA PUMA,M,2,,01/05/2025 15:36,Entregue,CP-001,VERDE,83.0,166.0
+3,FABRICIO,CAMISA NIKE,M,2,,02/05/2025 13:32,Entregue,CN-001,VERDE,95.0,190.0
+4,ROBSON,CAMISA NIKE,M,1,,02/05/2025 13:34,Entregue,CN-001,VERDE,95.0,95.0
